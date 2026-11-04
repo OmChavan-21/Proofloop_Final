@@ -23,16 +23,6 @@ export const AnalysisRequestSchema = z.object({
 
 export type AnalysisRequestInput = z.infer<typeof AnalysisRequestSchema>;
 
-const validActions: [string, ...string[]] = [
-  "approve",
-  "reject",
-  "request_changes",
-  "Approve",
-  "Reject",
-  "Request changes",
-  "request-changes"
-];
-
 export const ApprovalRequestSchema = z.object({
   analysisId: z
     .string("Analysis ID is required.")

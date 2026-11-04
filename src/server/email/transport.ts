@@ -42,6 +42,17 @@ export function getActiveMailTransporter(): Transporter | undefined {
 }
 
 /**
+ * Checks whether SMTP delivery credentials or a mock transporter are configured.
+ */
+export function isSmtpConfigured(): boolean {
+  if (customTransporter) {
+    return true;
+  }
+  const config = getSmtpConfig();
+  return Boolean(config.pass && config.pass.trim());
+}
+
+/**
  * Creates or retrieves the active mail transporter.
  * Returns null if SMTP_PASS is missing and no mock transporter is injected.
  */

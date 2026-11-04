@@ -1,13 +1,22 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { betterAuth } from "better-auth/minimal";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAccessControl } from "better-auth/plugins/access";
 import { organization } from "better-auth/plugins/organization";
 import { emailOTP } from "better-auth/plugins/email-otp";
 import { defaultStatements } from "better-auth/plugins/organization/access";
+import { createAuthMiddleware, APIError } from "better-auth/api";
 import { getDatabase, schema } from "../db";
-import { sendPasswordResetEmail, sendVerificationOTPEmail } from "../email";
+import { isSmtpConfigured, sendPasswordResetEmail, sendVerificationOTPEmail } from "../email";
 
-function createAuth() {
+export interface EmailDeliveryContext {
+  failed: boolean;
+  error?: string;
+}
+
+export const emailDeliveryStorage = new AsyncLocalStorage<EmailDeliveryContext>();
+
+export function createAuth(options?: { database?: Parameters<typeof betterAuth>[0]["database"] }) {
   const secret = process.env.BETTER_AUTH_SECRET;
   const baseURL = process.env.BETTER_AUTH_URL;
   if (!secret || secret.length < 32) throw new Error("BETTER_AUTH_SECRET must contain at least 32 characters.");
@@ -23,17 +32,45 @@ function createAuth() {
     appName: "Proofloop",
     baseURL,
     secret,
-    database: drizzleAdapter(getDatabase(), { provider: "pg", schema, usePlural: false }),
+    database: options?.database ?? drizzleAdapter(getDatabase(), { provider: "pg", schema, usePlural: false }),
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        const isAuthDeliveryPath =
+          ctx.path === "/sign-up/email" ||
+          ctx.path === "/email-otp/send-verification-otp";
+
+        if (isAuthDeliveryPath && !isSmtpConfigured() && process.env.NODE_ENV !== "test") {
+          throw new APIError("SERVICE_UNAVAILABLE", {
+            message: "Email delivery service is not configured. Verification codes cannot be sent."
+          });
+        }
+      }),
+      after: createAuthMiddleware(async (ctx) => {
+        const store = emailDeliveryStorage.getStore();
+        const isAuthDeliveryPath =
+          ctx.path === "/sign-up/email" ||
+          ctx.path === "/email-otp/send-verification-otp";
+
+        if (isAuthDeliveryPath && store?.failed) {
+          throw new APIError("BAD_GATEWAY", {
+            message: "Failed to deliver verification code. Please check your email address or try again."
+          });
+        }
+      }),
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
       sendResetPassword: async ({ user, url, token }) => {
-        await sendPasswordResetEmail({
+        const result = await sendPasswordResetEmail({
           to: user.email,
           name: user.name,
           url,
           token,
         });
+        if (!result.success && !(process.env.NODE_ENV === "test" && result.skipped)) {
+          process.stderr.write("[Proofloop Mailer] Password reset email delivery failed.\n");
+        }
       },
     },
     emailVerification: {
@@ -64,8 +101,16 @@ function createAuth() {
             otp,
             type,
           });
-          if (!result.success && !result.skipped) {
-            throw new Error(`Email delivery failed: ${result.error || "SMTP delivery error"}`);
+          if (process.env.NODE_ENV === "test" && result.skipped) {
+            return;
+          }
+          if (!result.success) {
+            const store = emailDeliveryStorage.getStore();
+            if (store) {
+              store.failed = true;
+              store.error = "Verification code could not be delivered.";
+            }
+            throw new Error("Verification code could not be delivered.");
           }
         },
       }),
@@ -76,4 +121,8 @@ function createAuth() {
 let configuredAuth: ReturnType<typeof createAuth> | undefined;
 export function getAuth() {
   return (configuredAuth ??= createAuth());
+}
+
+export function setAuth(auth: ReturnType<typeof createAuth> | undefined) {
+  configuredAuth = auth;
 }

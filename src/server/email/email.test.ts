@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Transporter } from "nodemailer";
 import {
   getSmtpConfig,
+  isSmtpConfigured,
   setMailTransporter,
   createMailTransporter,
   sendEmail,
@@ -194,5 +195,93 @@ describe("Email Delivery & SMTP Service", () => {
     // Ensure no password or secret token was logged
     expect(loggedError).not.toContain("password=");
     expect(loggedError).not.toContain("auth=");
+  });
+
+  it("accurately detects SMTP configuration status via isSmtpConfigured()", () => {
+    delete process.env.SMTP_PASS;
+    setMailTransporter(undefined);
+    expect(isSmtpConfigured()).toBe(false);
+
+    process.env.SMTP_PASS = "sample-app-password";
+    expect(isSmtpConfigured()).toBe(true);
+
+    delete process.env.SMTP_PASS;
+    const mockTransporter = {} as unknown as Transporter;
+    setMailTransporter(mockTransporter);
+    expect(isSmtpConfigured()).toBe(true);
+  });
+
+  it("fails closed without skipping when SMTP_PASS is missing in non-test mode", async () => {
+    delete process.env.SMTP_PASS;
+    setMailTransporter(undefined);
+
+    const originalNodeEnv = process.env.NODE_ENV;
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    try {
+      (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+      const result = await sendEmail({
+        to: "prod-user@example.com",
+        subject: "Prod Test",
+        text: "Body",
+        html: "<p>Body</p>",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.skipped).toBe(false);
+      expect(result.error).toBe("SMTP delivery service is not configured.");
+      expect(stderrSpy).toHaveBeenCalled();
+    } finally {
+      (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
+    }
+  });
+
+  it("redacts sensitive credential fragments in caught transport errors", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    const mockTransporter = {
+      sendMail: vi.fn().mockRejectedValue(new Error("SMTP Error: password=supersecret auth=token123 token=abc456")),
+    } as unknown as Transporter;
+
+    setMailTransporter(mockTransporter);
+
+    const result = await sendEmail({
+      to: "victim@example.com",
+      subject: "Test",
+      text: "Body",
+      html: "<p>Body</p>",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).not.toContain("supersecret");
+    expect(result.error).not.toContain("token123");
+    expect(result.error).not.toContain("abc456");
+    expect(result.error).toContain("[REDACTED]");
+
+    const logged = stderrSpy.mock.calls.map((c) => String(c[0])).join(" ");
+    expect(logged).not.toContain("supersecret");
+    expect(logged).not.toContain("token123");
+    expect(logged).toContain("[REDACTED]");
+  });
+
+  it("never logs recipient email addresses in error logs", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    const mockTransporter = {
+      sendMail: vi.fn().mockRejectedValue(new Error("SMTP delivery failure: mailbox unavailable for confidential-user@client.com")),
+    } as unknown as Transporter;
+
+    setMailTransporter(mockTransporter);
+
+    await sendEmail({
+      to: "confidential-user@client.com",
+      subject: "Confidential Subject",
+      text: "Body",
+      html: "<p>Body</p>",
+    });
+
+    const logged = stderrSpy.mock.calls.map((c) => String(c[0])).join(" ");
+    expect(logged).not.toContain("confidential-user@client.com");
+    expect(logged).toContain("[REDACTED_RECIPIENT]");
   });
 });

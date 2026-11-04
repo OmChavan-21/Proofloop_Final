@@ -16,7 +16,7 @@ export interface VerifyEmailFormProps {
 export function VerifyEmailForm({ initialEmail, onSuccess, onBack }: VerifyEmailFormProps) {
   const router = useRouter();
   const { refreshSession } = useTenant();
-  const [email, setEmail] = useState(initialEmail.trim());
+  const [email] = useState(initialEmail.trim());
   const [otp, setOtp] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);

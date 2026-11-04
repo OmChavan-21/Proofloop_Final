@@ -25,15 +25,16 @@ export async function sendEmail(options: SendEmailOptions): Promise<EmailDeliver
   const config = getSmtpConfig();
 
   if (!transporter) {
-    if (process.env.NODE_ENV !== "test") {
+    const isTest = process.env.NODE_ENV === "test";
+    if (!isTest) {
       process.stderr.write(
-        `[Proofloop Mailer] Warning: SMTP_PASS is not configured. Email to "${options.to}" was not delivered.\n`
+        "[Proofloop Mailer] Error: SMTP_PASS is not configured. Outgoing email was not delivered.\n"
       );
     }
     return {
       success: false,
-      skipped: true,
-      error: "SMTP_PASS is not configured on the server.",
+      skipped: isTest,
+      error: isTest ? "SMTP_PASS is not configured on the server." : "SMTP delivery service is not configured.",
     };
   }
 
@@ -51,9 +52,15 @@ export async function sendEmail(options: SendEmailOptions): Promise<EmailDeliver
       messageId: info.messageId,
     };
   } catch (error) {
-    // Sanitized logging: never include credentials, passwords, or raw auth headers
-    const sanitizedError = error instanceof Error ? error.message : "SMTP delivery failed";
-    process.stderr.write(`[Proofloop Mailer] Error delivering email to "${options.to}": ${sanitizedError}\n`);
+    // Sanitized logging: never include credentials, passwords, recipient addresses, or raw auth headers
+    const rawError = error instanceof Error ? error.message : "SMTP delivery failed";
+    const sanitizedError = rawError
+      .replaceAll(options.to, "[REDACTED_RECIPIENT]")
+      .replace(/pass(word)?\s*[:=]\s*\S+/gi, "password=[REDACTED]")
+      .replace(/auth\s*[:=]\s*\S+/gi, "auth=[REDACTED]")
+      .replace(/token\s*[:=]\s*\S+/gi, "token=[REDACTED]");
+
+    process.stderr.write(`[Proofloop Mailer] Error delivering outgoing email: ${sanitizedError}\n`);
     return {
       success: false,
       error: sanitizedError,
@@ -77,7 +84,6 @@ export interface VerificationOTPEmailParams {
 export async function sendVerificationOTPEmail({
   to,
   otp,
-  type = "email-verification",
 }: VerificationOTPEmailParams): Promise<EmailDeliveryResult> {
   const subject = "Your Proofloop verification code";
   const text = `Hello,\n\nYour 6-digit Proofloop verification code is:\n\n${otp}\n\nThis verification code will expire in 5 minutes.\n\nIf you did not request a verification code, you can safely ignore this email.\n\n— The Proofloop Team`;

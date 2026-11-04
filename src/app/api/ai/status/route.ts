@@ -3,10 +3,10 @@
  * Returns verified AI provider status per CONTRACT.md
  */
 
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { getProviderStatuses } from "../../../../server/ai";
 
-export async function GET(_request?: NextRequest) {
+export async function GET() {
   try {
     const statuses = await getProviderStatuses();
     return NextResponse.json(statuses);
