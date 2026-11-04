@@ -4,6 +4,9 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { getAnalysis } from "../../../../server/storage";
+import { authErrorResponse, resolveRequestTenant } from "../../../../server/auth/session";
+import { withTenantContext } from "../../../../server/auth/tenant-context";
+import { getPersistedAnalysis } from "../../../../server/db/persistence";
 
 export async function GET(
   _request: NextRequest,
@@ -11,7 +14,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const analysis = getAnalysis(id);
+    const tenant = await resolveRequestTenant(_request.headers, "analysis:read", _request.headers.get("x-proofloop-workspace-id") ?? undefined);
+    const analysis = tenant
+      ? await getPersistedAnalysis(tenant, id)
+      : await withTenantContext(null, async () => getAnalysis(id));
 
     if (!analysis) {
       return NextResponse.json(
@@ -25,6 +31,7 @@ export async function GET(
 
     return NextResponse.json(analysis);
   } catch (error) {
+    if (error instanceof Error && "status" in error) return authErrorResponse(error);
     const message = error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json(
       {

@@ -11,7 +11,6 @@ export * from "./provider";
 export * from "./meta-provider";
 export * from "./deterministic-provider";
 
-const metaProvider = new MetaAIProvider();
 const deterministicProvider = new DeterministicProvider();
 
 /**
@@ -19,6 +18,7 @@ const deterministicProvider = new DeterministicProvider();
  * Never silently pretends a mock or deterministic engine is Meta AI.
  */
 export async function resolveAIProvider(): Promise<AIProvider> {
+  const metaProvider = new MetaAIProvider();
   const metaVerification = await metaProvider.verifyConnection();
 
   if (metaVerification.connected) {
@@ -39,6 +39,7 @@ export async function getProviderStatuses(): Promise<{
   metaAI: AIProviderStatus;
   deterministicEngine: AIProviderStatus;
 }> {
+  const metaProvider = new MetaAIProvider();
   const metaStatus = await metaProvider.getStatus();
   const deterministicStatus = await deterministicProvider.getStatus();
 

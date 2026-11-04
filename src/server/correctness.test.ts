@@ -49,12 +49,18 @@ describe("Post-Integration Correctness Verification", () => {
       start: "2026-10-01",
       endExclusive: "2026-12-01"
     });
+    expect(qComp?.currentPeriod.actualDataCoverage.start).toBe("2026-10-08");
     expect(qComp?.currentPeriod.actualDataCoverage.end).toBe("2026-11-02");
     expect(qComp?.currentPeriod.latestDataDate).toBe("2026-11-02");
 
-    // Explanation never implies Q4 is complete
+    // Regression check: metadata.dataCoverage.q4Coverage must report October 8 (not October 1)
+    expect(metadata?.dataCoverage.q4Coverage).toContain("October 8");
+    expect(metadata?.dataCoverage.q4Coverage).not.toContain("October 1 through");
+
+    // Explanation never implies Q4 is complete and uses October 8 as actual data start
     expect(result.explanation.summary).toContain("partial quarter");
-    expect(result.explanation.summary).toContain("2026-11-02");
+    expect(result.explanation.summary).toContain("October 8 through 2026-11-02");
+    expect(result.explanation.summary).not.toContain("October 1 through 2026-11-02");
     expect(result.explanation.summary).toContain("complete Q3");
     expect(result.explanation.summary).toMatch(
       /should not be interpreted as a completed quarter/i
@@ -133,5 +139,37 @@ describe("Post-Integration Correctness Verification", () => {
     // Summary must use pp or percentage points
     expect(result.explanation.summary).toContain("-18.16 pp");
     expect(result.explanation.summary).not.toContain("(-18.16% to 36.84%)");
+  });
+
+  it("5. Regression test: Q4 actual data coverage accurately reports October 8 start in summary and metadata", async () => {
+    const result = await runAnalysisOrchestration({
+      question:
+        "Which products are affecting our current quarter's profit margin, and why?"
+    });
+
+    // Calendar quarter window must remain 2026-10-01 to 2026-12-01 (exclusive)
+    expect(result.metadata?.quarterComparison.calendarQuarter).toEqual({
+      start: "2026-10-01",
+      endExclusive: "2026-12-01"
+    });
+
+    // Actual transaction coverage start must be 2026-10-08, not 2026-10-01
+    expect(result.metadata?.quarterComparison.actualDataCoverage).toEqual({
+      start: "2026-10-08",
+      end: "2026-11-02"
+    });
+
+    // metadata.dataCoverage.q4Coverage must use October 8
+    expect(result.metadata?.dataCoverage.q4Coverage).toBe(
+      "partial quarter (October 8 through 2026-11-02)"
+    );
+
+    // explanation.summary must explicitly state October 8
+    expect(result.explanation.summary).toContain(
+      "actual seeded data coverage: October 8 through 2026-11-02"
+    );
+    expect(result.explanation.summary).not.toContain(
+      "actual seeded data coverage: October 1 through 2026-11-02"
+    );
   });
 });

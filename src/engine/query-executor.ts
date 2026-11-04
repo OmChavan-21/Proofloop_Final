@@ -15,7 +15,8 @@ export interface QueryExecutionResult {
 
 export function executeReadOnlyQuery(
   db: Database,
-  sql: string
+  sql: string,
+  parameters: Array<string | number | null> = []
 ): QueryExecutionResult {
   const validation = validateSql(sql);
 
@@ -33,6 +34,7 @@ export function executeReadOnlyQuery(
   try {
     const statement = db.prepare(sql);
     try {
+      if (parameters.length > 0) statement.bind(parameters);
       const columns = statement.getColumnNames();
       const rows: Record<string, unknown>[] = [];
       let truncated = false;

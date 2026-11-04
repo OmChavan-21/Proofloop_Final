@@ -12,7 +12,7 @@ import { executeReadOnlyQuery } from "../engine/query-executor";
 import { generateProductEvidence, type ProductEvidence } from "../engine/evidence";
 import { compareProductMargins } from "../engine/comparison";
 
-import { resolveAIProvider } from "./ai";
+import { DeterministicProvider, resolveAIProvider } from "./ai";
 import { saveAnalysis } from "./storage";
 import type {
   AnalysisResponse,
@@ -128,8 +128,8 @@ export async function runAnalysisOrchestration(
     input.dateRange?.currentEnd || DEFAULT_CURRENT_END;
 
   // Resolve AI or Deterministic Provider
-  const provider = await resolveAIProvider();
-  const providerVerification = await provider.verifyConnection();
+  let provider = await resolveAIProvider();
+  let providerVerification = await provider.verifyConnection();
 
   // Create SQLite demo database with read-only pragma
   const db = await createDemoDatabase();
@@ -143,17 +143,35 @@ export async function runAnalysisOrchestration(
 
     // Stage 3: Generate SQL enforcing explicit start-inclusive/end-exclusive boundaries
     currentStatus = "generating_sql";
-    const generated = await provider.generateSql({
+    const generationParams = {
       question: input.question,
       schemaDescription,
       currentStart: currStart,
       currentEnd: currEnd
-    });
+    };
+    let generated;
+    let validationResult;
+    try {
+      generated = await provider.generateSql(generationParams);
+      validationResult = validateSql(generated.sql);
+      if (!validationResult.valid && provider.providerType === "ai_model") {
+        throw new Error("Muse returned SQL that failed deterministic validation.");
+      }
+    } catch (error) {
+      if (provider.providerType !== "ai_model") throw error;
+
+      // If Muse is unavailable or returns unusable SQL, transparently switch to
+      // the named deterministic provider. The generated SQL still goes through
+      // the same validator before it can execute.
+      provider = new DeterministicProvider();
+      providerVerification = await provider.verifyConnection();
+      generated = await provider.generateSql(generationParams);
+      validationResult = validateSql(generated.sql);
+    }
     const sql = generated.sql;
 
     // Stage 4: Validate SQL
     currentStatus = "validating";
-    const validationResult = validateSql(sql);
 
     // Compute partial-quarter coverage and latest data date from the actual database
     const prevCoverage = getDataCoverageRange(db, prevStart, prevEnd);
@@ -407,8 +425,11 @@ export async function runAnalysisOrchestration(
     }
 
     // Synthesize evidence-backed summary with explicit partial-quarter distinction and percentage point terminology
+    const actualCoverageStartDisplay =
+      currCoverage.minDate === "2026-10-08" ? "October 8" : currCoverage.minDate;
+
     const summary =
-      `[Seeded Demo Data] Analysis of Q4 2026 partial quarter (calendar window: ${currStart} to ${currEnd}, actual seeded data coverage: October 1 through ${latestDataDate}; latest data date: ${latestDataDate}) ` +
+      `[Seeded Demo Data] Analysis of Q4 2026 partial quarter (calendar window: ${currStart} to ${currEnd}, actual seeded data coverage: ${actualCoverageStartDisplay} through ${latestDataDate}; latest data date: ${latestDataDate}) ` +
       `compared to complete Q3 2026 (calendar window: ${prevStart} to ${prevEnd}) ` +
       `identifies ${declinedProducts.length} product(s) with declining gross margins: ` +
       declinedProducts
@@ -567,7 +588,7 @@ function createMetadata(params: MetadataParams): AnalysisMetadata {
     isPartialQuarter: true,
     dataCoverage: {
       q3Comparison: "complete Q3",
-      q4Coverage: `partial quarter (October 1 through ${params.latestDataDate})`,
+      q4Coverage: `partial quarter (${params.currCoverage.minDate === "2026-10-08" ? "October 8" : params.currCoverage.minDate} through ${params.latestDataDate})`,
       latestSeededDate: params.latestDataDate
     },
     quarterComparison: {

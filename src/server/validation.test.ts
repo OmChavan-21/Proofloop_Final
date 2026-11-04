@@ -89,8 +89,23 @@ describe("Request Validation", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.action).toBe("request_changes");
-        expect(result.data.reviewedBy).toBe("sarah_cfo");
+        expect("reviewedBy" in result.data).toBe(false);
         expect(result.data.notes).toBe("Please recheck shipping discounts.");
+      }
+    });
+
+    it("strips caller-controlled reviewer and tenant authorization fields", () => {
+      const result = validateApprovalRequest({
+        analysisId: "analysis-123",
+        action: "approve",
+        reviewedBy: "forged-reviewer",
+        organizationId: "forged-org",
+        workspaceId: "forged-workspace",
+        role: "owner"
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual({ analysisId: "analysis-123", action: "approve" });
       }
     });
 

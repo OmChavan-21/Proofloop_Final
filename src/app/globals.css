@@ -1,6 +1,20 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light;
+  --primitive-canvas: #f6f8f9;
+  --primitive-surface: #ffffff;
+  --primitive-ink: #212331;
+  --primitive-muted: #707280;
+  --primitive-line: #e6e6ed;
+  --primitive-brand: #6b50cf;
+  --primitive-brand-soft: #efebfb;
+  --primitive-positive: #23755b;
+  --primitive-positive-soft: #e7f4ef;
+  --primitive-negative: #b42318;
+  --primitive-negative-soft: #fdeceb;
+  --primitive-warning: #8a5a00;
+  --primitive-warning-soft: #fbf3df;
   --canvas: #f6f8f9;
   --card: #ffffff;
   --ink: #212331;
@@ -34,14 +48,32 @@
   --color-negative-soft: var(--negative-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
+  --color-ring: var(--brand);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
+  min-height: 100vh;
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-sans), sans-serif;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 ::selection {

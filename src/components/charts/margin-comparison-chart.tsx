@@ -64,7 +64,17 @@ export function MarginComparisonChart({
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <table className="sr-only">
+      <details className="mt-3 border-t border-line pt-3 text-sm">
+        <summary className="min-h-8 cursor-pointer font-medium text-brand">View product margin values</summary>
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-96 text-left text-sm">
+            <caption className="sr-only">Complete Q3 and partial Q4 gross margins for each product</caption>
+            <thead className="text-xs text-muted"><tr><th scope="col" className="py-2 pr-3 font-medium">Product</th><th scope="col" className="py-2 pr-3 text-right font-medium">Q3 margin</th><th scope="col" className="py-2 pr-3 text-right font-medium">Q4 to date</th><th scope="col" className="py-2 text-right font-medium">Change</th></tr></thead>
+            <tbody>{products.map((product) => <tr key={product.productId} className="border-t border-line"><th scope="row" className="py-2 pr-3 font-medium">{product.productName}</th><td className="py-2 pr-3 text-right tabular-nums">{formatPercent(product.q3Margin)}</td><td className="py-2 pr-3 text-right tabular-nums">{formatPercent(product.q4Margin)}</td><td className="py-2 text-right tabular-nums">{formatPoints(product.marginChange)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </details>
+      <table className="sr-only !w-px !max-w-px table-fixed">
         <caption>Gross margin change for every seeded product</caption>
         <tbody>
           {products.map((product) => (

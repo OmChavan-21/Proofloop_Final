@@ -1,12 +1,23 @@
-export function PartialNote({ lastSaleDate }: { lastSaleDate: string | null }) {
+import { formatDay } from "@/components/dashboard/format";
+
+export function PartialNote({
+  firstSaleDate,
+  lastSaleDate,
+}: {
+  firstSaleDate: string | null;
+  lastSaleDate: string | null;
+}) {
   return (
-    <p className="text-xs leading-5 text-warning">
-      Q4 2026 is not complete.
-      {lastSaleDate
-        ? ` Seeded sales in this quarter stop on ${lastSaleDate}.`
-        : " This seed has no Q4 sales."}{" "}
-      Revenue and profit totals cover that sample only. Margin rates can be
-      compared with Q3; sales volume cannot.
-    </p>
+    <aside
+      className="rounded-xl border border-[#e6d9b8] bg-warning-soft px-4 py-3"
+      aria-label="Partial quarter data notice"
+    >
+      <p className="text-sm font-medium text-warning">Q4 2026 is a partial quarter.</p>
+      <p className="mt-1 text-sm leading-5 text-ink/80">
+        {firstSaleDate && lastSaleDate
+          ? `This seeded sample includes sales from ${formatDay(firstSaleDate)} through ${formatDay(lastSaleDate)}. Revenue, gross profit, and units cover that sample only; Q3 covers a full quarter.`
+          : "There are no seeded Q4 sales to summarize. Q3 contains a complete quarter."}
+      </p>
+    </aside>
   );
 }

@@ -378,6 +378,96 @@ Approval actions:
 
 Every decision must be recorded in an audit history.
 
+### Approval Workflow Endpoints
+
+This is a demo workflow only. Authentication is not configured, and no reviewer identity is verified. The API ignores caller-supplied `reviewedBy` values and records the fixed label `Demo reviewer (unverified)`. The current audit history is process-local in-memory state: it is not durable across restarts or server instances and is not tamper-proof or immutable. Persistence and authenticated reviewer attribution are future work.
+
+Canonical endpoints are `GET /api/approvals/pending`, `POST /api/approvals`, and `GET /api/audit`. Backward-compatible aliases remain available: `GET /api/approval/pending`, `POST /api/analysis/{id}/approval`, and `GET /api/approvals` / `GET /api/approval` for audit history.
+
+#### 1. Pending Approvals Queue: `GET /api/approvals/pending`
+Returns analyses currently requiring human approval (`approval.status === "pending"`), sorted newest first.
+
+Response:
+```json
+{
+  "pendingApprovals": [
+    {
+      "analysisId": "analysis-id",
+      "question": "Business question",
+      "generatedAt": "ISO-8601 timestamp",
+      "approvalStatus": "pending",
+      "recommendations": [
+        "Recommendation text"
+      ],
+      "findingsCount": 6,
+      "declinedProducts": ["Classic Backpack", "Urban Sneakers"]
+    }
+  ],
+  "count": 1
+}
+```
+When no pending records exist, returns `{ "pendingApprovals": [], "count": 0 }`.
+
+#### 2. Submit Decision: `POST /api/approvals`
+Submits a decision only while the analysis is pending, then updates its approval state and appends an in-memory audit entry synchronously. Repeated, conflicting, or stale decisions return `409 Conflict` and do not add an audit entry. Missing analyses return `404`; malformed requests return `400`.
+
+Request:
+```json
+{
+  "analysisId": "analysis-id",
+  "action": "approve | reject | request_changes",
+  "notes": "Optional notes"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "approval": {
+    "status": "approved",
+    "action": "approve",
+    "reviewedAt": "ISO-8601 timestamp",
+    "reviewedBy": "Demo reviewer (unverified)",
+    "notes": "Optional notes",
+    "recommendations": []
+  },
+  "auditEntry": {
+    "id": "audit-id",
+    "timestamp": "ISO-8601 timestamp",
+    "analysisId": "analysis-id",
+    "action": "approve",
+    "previousStatus": "pending",
+    "newStatus": "approved",
+    "reviewedBy": "Demo reviewer (unverified)",
+    "notes": "Optional notes"
+  }
+}
+```
+
+Successful responses also include `analysis`, containing the updated full analysis object. Legacy requests may still include `reviewedBy`, but it is ignored. A conflict response is `{ "error": "Approval decision conflict: analysis is no longer pending (current status: approved).", "code": "APPROVAL_CONFLICT" }` (the current status varies).
+
+#### 3. Decision Audit History: `GET /api/audit` and compatibility aliases
+`GET /api/audit` returns the current process's in-memory audit entries and includes `filteredByAnalysisId` (`null` when no filter is supplied). `GET /api/approvals` and its `GET /api/approval` alias return the same `auditHistory` and `count` fields without `filteredByAnalysisId`. All accept optional `?analysisId=...`. This history can be lost on restart or when requests reach another server instance; it is not durable, tamper-proof, or immutable.
+```json
+{
+  "auditHistory": [
+    {
+      "id": "audit-id",
+      "timestamp": "ISO-8601 timestamp",
+      "analysisId": "analysis-id",
+      "action": "approve",
+      "previousStatus": "pending",
+      "newStatus": "approved",
+      "reviewedBy": "Demo reviewer (unverified)",
+      "notes": "Optional notes"
+    }
+  ],
+  "count": 1,
+  "filteredByAnalysisId": "analysis-id"
+}
+```
+
 
 
 \## 10. UI Requirements
@@ -501,3 +591,17 @@ Do not claim a feature is complete until it has been implemented and tested.
 
 
 When a feature cannot be completed, report its actual status and limitation.
+
+\## 15. Milestone 2A Authentication and Tenancy Foundation
+
+Authentication is provided server-side by Better Auth at `/api/auth/*`, backed by PostgreSQL through Drizzle. Use the Better Auth email signup/login/logout and organization plugin endpoints; application routes must call the server session resolver and must not accept identity, organization, or role as authorization claims from request bodies.
+
+Roles are `owner`, `admin`, `analyst`, and `viewer`. Owner can administer the organization and workspaces, run/read analyses, and decide approvals. Admin can administer workspaces, run/read analyses, and decide approvals. Analyst can run/read analyses. Viewer can read analyses. Every permission is checked server-side against the organization membership stored in PostgreSQL.
+
+`POST /api/workspaces` accepts `{ "name": "Operations" }`; organization and creator are derived from the server session. It returns `{ "workspace": { "id": "...", "organizationId": "...", "name": "Operations", "createdAt": "..." } }`. `GET /api/workspaces` returns `{ "workspaces": [...] }` limited to the authenticated organization and the user's workspace memberships (owners/admins see their organization's workspaces). `POST /api/workspaces/{id}/members` accepts `{ "userId": "..." }`; the target must already be an organization member and the caller must be an owner/admin authorized for that workspace.
+
+Analysis, approval, pending-approval, and audit APIs are protected by a server-side session and organization/workspace membership when PostgreSQL is configured. Analysis records and their initial approval state are persisted together. Decisions update approval state and the analysis response and insert the decision and audit event in one PostgreSQL transaction. The in-memory sql.js MVP store remains the openly unauthenticated seeded-demo path when PostgreSQL is absent in non-production; authenticated requests use PostgreSQL as their durable source of truth. Production fails closed if authentication configuration is missing.
+
+The `auth` schema holds Better Auth identity and organization records. The `app` schema holds workspace, workspace-membership, analysis, approval, decision and audit records. RLS is enabled and forced on tenant tables. The migration connection owns schema objects; the application connection must be a separate non-superuser role with `NOBYPASSRLS` and no table ownership. Server code sets transaction-local tenant context only after Better Auth session and membership checks. PostgreSQL RLS tests require `TEST_DATABASE_URL` as the application role and `MIGRATION_DATABASE_URL` as the migration owner, with migrations applied to a disposable database.
+
+This milestone does not configure an email provider, email verification, password-reset delivery, or auth/workspace selection UI. Until these are configured and the PostgreSQL RLS integration test is run in a deployment-like database, this foundation is not production security certification.

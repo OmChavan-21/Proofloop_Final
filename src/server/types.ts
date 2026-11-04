@@ -88,6 +88,16 @@ export interface ApprovalState {
   recommendations?: string[];
 }
 
+export interface PendingApprovalItem {
+  analysisId: string;
+  question: string;
+  generatedAt: string;
+  approvalStatus: "pending";
+  recommendations: string[];
+  findingsCount: number;
+  declinedProducts: string[];
+}
+
 export interface QuarterPeriodDetail {
   label: string;
   quarterType: "complete" | "partial_quarter";

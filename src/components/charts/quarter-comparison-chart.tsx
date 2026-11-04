@@ -91,7 +91,17 @@ export function QuarterComparisonChart({
         Those dates are sparse samples. Q4 revenue is lower partly because the
         quarter is unfinished, so the bar heights are not a like-for-like trend.
       </p>
-      <table className="sr-only">
+      <details className="mt-3 border-t border-line pt-3 text-sm">
+        <summary className="min-h-8 cursor-pointer font-medium text-brand">View exact chart values</summary>
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-72 text-left text-sm">
+            <caption className="sr-only">Revenue and gross profit totals shown in the chart</caption>
+            <thead className="text-xs text-muted"><tr><th scope="col" className="py-2 pr-3 font-medium">Period</th><th scope="col" className="py-2 pr-3 text-right font-medium">Revenue</th><th scope="col" className="py-2 text-right font-medium">Gross profit</th></tr></thead>
+            <tbody>{data.map((row) => <tr key={row.name} className="border-t border-line"><th scope="row" className="py-2 pr-3 font-medium">{row.name} · {row.caption}</th><td className="py-2 pr-3 text-right tabular-nums">{formatMoney(row.revenue)}</td><td className="py-2 text-right tabular-nums">{formatMoney(row.grossProfit)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </details>
+      <table className="sr-only !w-px !max-w-px table-fixed">
         <caption>Q3 and partial Q4 revenue and gross profit</caption>
         <thead>
           <tr>

@@ -32,7 +32,7 @@ describe("Server-side Analysis Orchestration", () => {
     // Evidence stage
     expect(result.evidence.length).toBeGreaterThan(0);
     const backpackEvidence = result.evidence.find(
-      (e: any) => e.productId === "P001"
+      (e) => "productId" in e && e.productId === "P001"
     );
     expect(backpackEvidence).toBeDefined();
     expect(backpackEvidence?.status).toBe("declined");

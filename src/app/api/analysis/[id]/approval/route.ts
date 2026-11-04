@@ -5,6 +5,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { validateApprovalRequest } from "../../../../../server/validation";
 import { recordApprovalDecision } from "../../../../../server/storage";
+import { authErrorResponse, resolveRequestTenant } from "../../../../../server/auth/session";
+import { withTenantContext } from "../../../../../server/auth/tenant-context";
+import { recordPersistedApprovalDecision } from "../../../../../server/db/persistence";
 
 export async function POST(
   request: NextRequest,
@@ -42,23 +45,28 @@ export async function POST(
       );
     }
 
-    const result = recordApprovalDecision(validation.data);
+    const tenant = await resolveRequestTenant(request.headers, "approval:decide", request.headers.get("x-proofloop-workspace-id") ?? undefined);
+    const result = tenant
+      ? await recordPersistedApprovalDecision(tenant, validation.data)
+      : await withTenantContext(null, async () => recordApprovalDecision(validation.data));
     if (!result.success) {
       return NextResponse.json(
         {
-          error: result.error
+          error: result.error,
+          ...(result.reason === "conflict" ? { code: "APPROVAL_CONFLICT" } : {})
         },
-        { status: 404 }
+        { status: result.reason === "conflict" ? 409 : 404 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      approval: result.analysis?.approval,
+      approval: result.analysis.approval,
       auditEntry: result.auditEntry,
       analysis: result.analysis
     });
   } catch (error) {
+    if (error instanceof Error && "status" in error) return authErrorResponse(error);
     const message = error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json(
       {

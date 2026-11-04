@@ -52,12 +52,8 @@ export const ApprovalRequestSchema = z.object({
           "Action must be one of: 'approve', 'reject', or 'request_changes'."
       }
     ),
-  reviewedBy: z
-    .string()
-    .trim()
-    .max(100, { message: "Reviewer name cannot exceed 100 characters." })
-    .optional()
-    .default("operations_lead"),
+  // Legacy clients may still send reviewedBy; Zod strips it because reviewer
+  // identity must eventually come from a trusted server session.
   notes: z
     .string()
     .trim()

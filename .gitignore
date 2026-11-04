@@ -147,3 +147,23 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+.neon
+
+# Agent skills and skill lockfiles
+.agents/
+skills-lock.json
+design-system/
+
+# Python cache and testing artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.coverage
+.coverage.*
+*.pytest_cache/
+
+# Local databases and scratch files
+*.sqlite
+*.sqlite3
+*.db
+scratch/

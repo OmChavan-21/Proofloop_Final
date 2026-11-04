@@ -46,7 +46,7 @@ describe("API Contract Integration Tests", () => {
     expect(data.approval.status).toBe("pending");
 
     // Verify GET /api/analysis lists it
-    const listRes = await getAnalyses();
+    const listRes = await getAnalyses(new NextRequest("http://localhost:3000/api/analysis"));
     expect(listRes.status).toBe(200);
     const listData = await listRes.json();
     expect(listData.count).toBe(1);
@@ -149,9 +149,9 @@ describe("API Contract Integration Tests", () => {
     const directRes = await postApprovalDirect(directApprovalReq, {
       params: Promise.resolve({ id: analysis.analysisId })
     });
-    expect(directRes.status).toBe(200);
+    expect(directRes.status).toBe(409);
     const directData = await directRes.json();
-    expect(directData.approval.status).toBe("changes_requested");
+    expect(directData.code).toBe("APPROVAL_CONFLICT");
 
     // Check GET /api/approvals
     const approvalsListRes = await getApprovals(
@@ -160,7 +160,7 @@ describe("API Contract Integration Tests", () => {
       )
     );
     const approvalsListData = await approvalsListRes.json();
-    expect(approvalsListData.count).toBe(2);
+    expect(approvalsListData.count).toBe(1);
   });
 
   it("GET /api/ai/status reports verified state truthfully", async () => {
