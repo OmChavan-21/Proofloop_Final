@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --canvas: #f6f8f9;
+  --card: #ffffff;
+  --ink: #212331;
+  --muted: #707280;
+  --line: #e6e6ed;
+  --brand: #6b50cf;
+  --brand-soft: #efebfb;
+  --positive: #23755b;
+  --positive-soft: #e7f4ef;
+  --negative: #b42318;
+  --negative-soft: #fdeceb;
+  --warning: #8a5a00;
+  --warning-soft: #fbf3df;
+  --background: var(--canvas);
+  --foreground: var(--ink);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans), sans-serif;
+}
+
+::selection {
+  background: #ddd6f8;
+}
