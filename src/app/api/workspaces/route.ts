@@ -31,6 +31,8 @@ export async function POST(request: NextRequest) {
       await tx.insert(schema.workspaceMembership).values({ id: randomUUID(), workspaceId, organizationId: tenant.organizationId, userId: tenant.userId });
       return workspace;
     });
-    return Response.json({ workspace: created }, { status: 201 });
+    const response = Response.json({ workspace: created }, { status: 201 });
+    response.headers.set("Set-Cookie", `proofloop_workspace_id=${workspaceId}; Path=/; SameSite=Lax`);
+    return response;
   } catch (error) { return authErrorResponse(error); }
 }

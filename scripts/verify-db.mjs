@@ -76,7 +76,10 @@ try {
       "approval_decision",
       "audit_event",
       "workspace",
-      "workspace_membership"
+      "workspace_membership",
+      "workspace_product",
+      "workspace_sale",
+      "workspace_sale_item"
     ];
 
     const missingAppTables = expectedAppTables.filter(

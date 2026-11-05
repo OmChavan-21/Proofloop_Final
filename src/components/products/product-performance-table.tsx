@@ -114,8 +114,8 @@ export function ProductPerformanceTable({ products }: { products: ProductSnapsho
 
       {products.length === 0 ? (
         <section className="rounded-xl border border-line bg-card p-5" role="status">
-          <h2 className="font-semibold text-ink">No seeded product data</h2>
-          <p className="mt-1 text-sm text-muted">The product snapshot returned no comparison rows.</p>
+          <h2 className="font-semibold text-ink">No product data</h2>
+          <p className="mt-1 text-sm text-muted">No products have been added to this workspace yet.</p>
         </section>
       ) : (
         <>

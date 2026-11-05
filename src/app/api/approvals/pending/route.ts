@@ -14,9 +14,9 @@ export async function GET(request: NextRequest) {
     const tenant = await resolveRequestTenant(request.headers, "approval:decide", request.headers.get("x-proofloop-workspace-id") ?? undefined);
     // Access request URL to ensure dynamic execution at runtime
     void request?.nextUrl.searchParams;
-    const pendingApprovals = tenant
+    const pendingApprovals = (tenant && process.env.DATABASE_URL)
       ? await listPersistedPendingApprovals(tenant)
-      : await withTenantContext(null, async () => listPendingApprovals());
+      : await withTenantContext(tenant, async () => listPendingApprovals());
     return NextResponse.json({
       pendingApprovals,
       count: pendingApprovals.length

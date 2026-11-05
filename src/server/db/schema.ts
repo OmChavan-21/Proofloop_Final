@@ -1,4 +1,4 @@
-import { boolean, foreignKey, index, jsonb, pgSchema, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgSchema, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const authSchema = pgSchema("auth");
 
@@ -156,4 +156,46 @@ export const auditEvent = pgSchema("app").table("audit_event", {
 }, (table) => [
   foreignKey({ columns: [table.analysisId, table.organizationId, table.workspaceId], foreignColumns: [analysis.analysisId, analysis.organizationId, analysis.workspaceId], name: "audit_event_analysis_scope_fk" }).onDelete("restrict"),
   index("audit_event_scope_created_idx").on(table.organizationId, table.workspaceId, table.createdAt)
+]);
+
+export const workspaceProduct = pgSchema("app").table("workspace_product", {
+  id: text("id").notNull(),
+  organizationId: text("organization_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  name: text("name").notNull(),
+  category: text("category").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  uniqueIndex("workspace_product_scope_id_unique").on(table.id, table.organizationId, table.workspaceId),
+  index("workspace_product_scope_idx").on(table.organizationId, table.workspaceId),
+  foreignKey({ columns: [table.workspaceId, table.organizationId], foreignColumns: [workspace.id, workspace.organizationId], name: "workspace_product_workspace_fk" }).onDelete("cascade")
+]);
+
+export const workspaceSale = pgSchema("app").table("workspace_sale", {
+  id: text("id").notNull(),
+  organizationId: text("organization_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  orderDate: text("order_date").notNull(),
+  status: text("status").notNull().default("completed")
+}, (table) => [
+  uniqueIndex("workspace_sale_scope_id_unique").on(table.id, table.organizationId, table.workspaceId),
+  index("workspace_sale_scope_date_idx").on(table.organizationId, table.workspaceId, table.orderDate),
+  foreignKey({ columns: [table.workspaceId, table.organizationId], foreignColumns: [workspace.id, workspace.organizationId], name: "workspace_sale_workspace_fk" }).onDelete("cascade")
+]);
+
+export const workspaceSaleItem = pgSchema("app").table("workspace_sale_item", {
+  id: text("id").notNull(),
+  organizationId: text("organization_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  saleId: text("sale_id").notNull(),
+  productId: text("product_id").notNull(),
+  quantity: integer("quantity").notNull(),
+  unitPrice: real("unit_price").notNull(),
+  unitCost: real("unit_cost").notNull(),
+  discount: real("discount").notNull().default(0)
+}, (table) => [
+  uniqueIndex("workspace_sale_item_scope_id_unique").on(table.id, table.organizationId, table.workspaceId),
+  index("workspace_sale_item_product_idx").on(table.organizationId, table.workspaceId, table.productId),
+  foreignKey({ columns: [table.saleId, table.organizationId, table.workspaceId], foreignColumns: [workspaceSale.id, workspaceSale.organizationId, workspaceSale.workspaceId], name: "workspace_sale_item_sale_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.productId, table.organizationId, table.workspaceId], foreignColumns: [workspaceProduct.id, workspaceProduct.organizationId, workspaceProduct.workspaceId], name: "workspace_sale_item_product_fk" }).onDelete("restrict")
 ]);

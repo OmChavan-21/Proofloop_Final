@@ -6,7 +6,8 @@
  */
 
 import type { Database } from "sql.js";
-import { createDemoDatabase } from "../engine/database";
+import { getWorkspaceDatabase } from "../engine/workspace-manager";
+import { loadWorkspaceDatabaseFromPostgres } from "./db/persistence";
 import { validateSql } from "../engine/sql-validator";
 import { executeReadOnlyQuery } from "../engine/query-executor";
 import { generateProductEvidence, type ProductEvidence } from "../engine/evidence";
@@ -14,6 +15,7 @@ import { compareProductMargins } from "../engine/comparison";
 
 import { DeterministicProvider, resolveAIProvider } from "./ai";
 import { saveAnalysis } from "./storage";
+import type { AuthenticatedTenant } from "./auth/session";
 import type {
   AnalysisResponse,
   AnalysisStatus,
@@ -101,19 +103,21 @@ function getDataCoverageRange(
     if (statement.step()) {
       const row = statement.getAsObject();
       return {
-        minDate: String(row.minDate ?? startDate),
-        maxDate: String(row.maxDate ?? endDate),
+        minDate: row.minDate ? String(row.minDate) : "",
+        maxDate: row.maxDate ? String(row.maxDate) : "",
         count: Number(row.count ?? 0)
       };
     }
-    return { minDate: startDate, maxDate: endDate, count: 0 };
+    return { minDate: "", maxDate: "", count: 0 };
   } finally {
     statement.free();
   }
 }
 
 export async function runAnalysisOrchestration(
-  input: AnalysisRequestInput
+  input: AnalysisRequestInput,
+  workspaceId?: string,
+  tenant?: AuthenticatedTenant
 ): Promise<AnalysisResponse> {
   const analysisId = `analysis-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   let currentStatus: AnalysisStatus = "understanding";
@@ -131,8 +135,11 @@ export async function runAnalysisOrchestration(
   let provider = await resolveAIProvider();
   let providerVerification = await provider.verifyConnection();
 
-  // Create SQLite demo database with read-only pragma
-  const db = await createDemoDatabase();
+  // Retrieve SQLite database scoped to workspace (or default demo catalog)
+  const isPostgres = Boolean(tenant && process.env.DATABASE_URL);
+  const db = isPostgres
+    ? await loadWorkspaceDatabaseFromPostgres(tenant!)
+    : await getWorkspaceDatabase(workspaceId, tenant);
 
   try {
     // Stage 1 & 2: Understand and Inspect
@@ -176,7 +183,7 @@ export async function runAnalysisOrchestration(
     // Compute partial-quarter coverage and latest data date from the actual database
     const prevCoverage = getDataCoverageRange(db, prevStart, prevEnd);
     const currCoverage = getDataCoverageRange(db, currStart, currEnd);
-    const latestDataDate = currCoverage.maxDate || "2026-11-02";
+    const latestDataDate = currCoverage.count > 0 ? currCoverage.maxDate : "";
 
     if (!validationResult.valid) {
       const failedResponse: AnalysisResponse = {
@@ -213,7 +220,8 @@ export async function runAnalysisOrchestration(
           currEnd,
           prevCoverage,
           currCoverage,
-          latestDataDate
+          latestDataDate,
+          dataSource: tenant ? "workspace_data" : "seeded_demo_data"
         })
       };
 
@@ -260,7 +268,8 @@ export async function runAnalysisOrchestration(
           currEnd,
           prevCoverage,
           currCoverage,
-          latestDataDate
+          latestDataDate,
+          dataSource: tenant ? "workspace_data" : "seeded_demo_data"
         })
       };
 
@@ -425,11 +434,14 @@ export async function runAnalysisOrchestration(
     }
 
     // Synthesize evidence-backed summary with explicit partial-quarter distinction and percentage point terminology
-    const actualCoverageStartDisplay =
-      currCoverage.minDate === "2026-10-08" ? "October 8" : currCoverage.minDate;
-
+    const dataLabel = tenant ? "selected workspace data" : "seeded demo data";
+    const actualCoverageStart = currCoverage.minDate === "2026-10-08" ? "October 8" : currCoverage.minDate;
+    const coverageSummary = currCoverage.count > 0
+      ? `actual ${tenant ? "workspace data" : "seeded data"} coverage: ${actualCoverageStart} through ${latestDataDate}`
+      : "no completed sales were found in the current period";
+    const verifiedDriverCount = findings.filter((finding) => (finding.causalAnalysis?.verifiedDrivers.length ?? 0) > 0).length;
     const summary =
-      `[Seeded Demo Data] Analysis of Q4 2026 partial quarter (calendar window: ${currStart} to ${currEnd}, actual seeded data coverage: ${actualCoverageStartDisplay} through ${latestDataDate}; latest data date: ${latestDataDate}) ` +
+      `${tenant ? "" : "[Seeded Demo Data] "}Analysis of Q4 2026 partial quarter (${dataLabel}; calendar window: ${currStart} to ${currEnd}; ${coverageSummary}) ` +
       `compared to complete Q3 2026 (calendar window: ${prevStart} to ${prevEnd}) ` +
       `identifies ${declinedProducts.length} product(s) with declining gross margins: ` +
       declinedProducts
@@ -438,8 +450,8 @@ export async function runAnalysisOrchestration(
             `${p.productName} (-${Math.abs(p.marginChange).toFixed(2)} pp to ${p.currentMargin.toFixed(2)}%)`
         )
         .join(", ") +
-      `. Margin compression is verified through transaction data demonstrating increased unit procurement costs and promotional discounts across seeded transactions. ` +
-      `Note: Q4 data reflects partial-quarter coverage through ${latestDataDate} and should not be interpreted as a completed quarter.`;
+      `. ${verifiedDriverCount > 0 ? `${verifiedDriverCount} finding(s) include transaction-derived drivers.` : "No transaction-derived margin driver was established for this analysis."} ` +
+      `The current quarter is partial and should not be interpreted as a completed quarter.`;
 
     // Stage 8: Approval Workflow Check
     const approval: ApprovalState = {
@@ -480,7 +492,8 @@ export async function runAnalysisOrchestration(
         currEnd,
         prevCoverage,
         currCoverage,
-        latestDataDate
+        latestDataDate,
+        dataSource: tenant ? "workspace_data" : "seeded_demo_data"
       })
     };
 
@@ -522,14 +535,15 @@ export async function runAnalysisOrchestration(
         currEnd,
         prevCoverage: { minDate: prevStart, maxDate: prevEnd, count: 0 },
         currCoverage: { minDate: currStart, maxDate: currEnd, count: 0 },
-        latestDataDate: "2026-11-02"
+        latestDataDate: "",
+        dataSource: tenant ? "workspace_data" : "seeded_demo_data"
       })
     };
 
     saveAnalysis(failedResponse);
     return failedResponse;
   } finally {
-    db.close();
+    if (isPostgres) db.close();
   }
 }
 
@@ -545,6 +559,7 @@ interface MetadataParams {
   prevCoverage: { minDate: string; maxDate: string; count: number };
   currCoverage: { minDate: string; maxDate: string; count: number };
   latestDataDate: string;
+  dataSource: AnalysisMetadata["dataSource"];
 }
 
 function createMetadata(params: MetadataParams): AnalysisMetadata {
@@ -558,10 +573,10 @@ function createMetadata(params: MetadataParams): AnalysisMetadata {
     },
     actualDataCoverage: {
       start: params.prevCoverage.minDate || params.prevStart,
-      end: params.prevCoverage.maxDate || params.prevEnd
+      end: params.prevCoverage.maxDate || ""
     },
-    latestDataDate: params.prevCoverage.maxDate || params.prevEnd,
-    coverageNote: "Complete quarter containing all Q3 transactions (July 10 to September 22, 2026)."
+    latestDataDate: params.prevCoverage.maxDate || "",
+    coverageNote: `Complete comparison window for ${params.dataSource === "seeded_demo_data" ? "seeded demo data" : "the selected workspace"}.`
   };
 
   const currentPeriod: QuarterPeriodDetail = {
@@ -573,37 +588,43 @@ function createMetadata(params: MetadataParams): AnalysisMetadata {
       endExclusive: params.currEnd
     },
     actualDataCoverage: {
-      start: params.currCoverage.minDate || params.currStart,
-      end: params.latestDataDate
+      start: params.currCoverage.count > 0 ? params.currCoverage.minDate : "",
+      end: params.currCoverage.count > 0 ? params.latestDataDate : ""
     },
     latestDataDate: params.latestDataDate,
-    coverageNote: `Partial quarter containing seeded transactions through ${params.latestDataDate}. Does not cover the full calendar quarter ending ${params.currEnd}.`
+    coverageNote: params.latestDataDate
+      ? `Partial quarter containing ${params.dataSource === "seeded_demo_data" ? "seeded transactions" : "workspace transactions"} through ${params.latestDataDate}. Does not cover the full calendar quarter ending ${params.currEnd}.`
+      : "No transaction date was found in this comparison window."
   };
 
   return {
-    dataSource: "seeded_demo_data",
-    isDemoData: true,
+    dataSource: params.dataSource,
+    isDemoData: params.dataSource === "seeded_demo_data",
     generatedAt: new Date().toISOString(),
     latestDataDate: params.latestDataDate,
     isPartialQuarter: true,
     dataCoverage: {
       q3Comparison: "complete Q3",
-      q4Coverage: `partial quarter (${params.currCoverage.minDate === "2026-10-08" ? "October 8" : params.currCoverage.minDate} through ${params.latestDataDate})`,
+      q4Coverage: params.latestDataDate
+        ? `partial quarter (${params.currCoverage.minDate === "2026-10-08" ? "October 8" : params.currCoverage.minDate} through ${params.latestDataDate})`
+        : "no completed sales in the period",
       latestSeededDate: params.latestDataDate
     },
     quarterComparison: {
       previousQuarter: "Q3 2026 (complete)",
-      currentQuarter: `Q4 2026 (partial, through ${params.latestDataDate})`,
+      currentQuarter: params.latestDataDate ? `Q4 2026 (partial, through ${params.latestDataDate})` : "Q4 2026 (partial; no transaction data found)",
       previousDateRange: { start: params.prevStart, endExclusive: params.prevEnd },
       currentDateRange: { start: params.currStart, endExclusive: params.currEnd },
       comparisonPeriod,
       currentPeriod,
       calendarQuarter: { start: params.currStart, endExclusive: params.currEnd },
       actualDataCoverage: {
-        start: params.currCoverage.minDate || params.currStart,
-        end: params.latestDataDate
+        start: params.currCoverage.count > 0 ? params.currCoverage.minDate : "",
+        end: params.currCoverage.count > 0 ? params.latestDataDate : ""
       },
-      coverageDistinction: `Calendar quarter spans ${params.currStart} to ${params.currEnd}; actual seeded data covers through ${params.latestDataDate}. Q3 is complete; Q4 is partial.`
+      coverageDistinction: params.latestDataDate
+        ? `Calendar quarter spans ${params.currStart} to ${params.currEnd}; actual ${params.dataSource === "seeded_demo_data" ? "seeded" : "workspace"} data covers through ${params.latestDataDate}. Q3 is complete; Q4 is partial.`
+        : `Calendar quarter spans ${params.currStart} to ${params.currEnd}; no transaction data was found in this comparison window.`
     },
     aiProvider: {
       name: params.providerName,

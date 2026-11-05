@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getAuth } from "./config";
 import { hasCapability, type Capability, type OrganizationRole } from "./permissions";
-import { getDatabase, schema, withTenantTransaction } from "../db";
+import { assertRuntimeDatabaseRole, getDatabase, schema, withTenantTransaction } from "../db";
 
 export type AuthenticatedTenant = {
   userId: string;
@@ -11,10 +11,24 @@ export type AuthenticatedTenant = {
 };
 
 export class AuthError extends Error {
-  constructor(public readonly status: 401 | 403 | 409 | 503, message: string) { super(message); }
+  constructor(public readonly status: 401 | 403 | 404 | 409 | 503, message: string) { super(message); }
+}
+
+function parseCookie(cookieHeader: string | null, key: string): string | undefined {
+  if (!cookieHeader) return undefined;
+  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${key}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : undefined;
 }
 
 export async function requireTenant(headers: Headers, capability: Capability, workspaceId?: string): Promise<AuthenticatedTenant> {
+  if (process.env.DATABASE_URL) {
+    try {
+      await assertRuntimeDatabaseRole();
+    } catch {
+      throw new AuthError(503, "The application database role is not safe for authenticated workspace access.");
+    }
+  }
+
   let auth: ReturnType<typeof getAuth>;
   try { auth = getAuth(); } catch (error) {
     throw new AuthError(503, error instanceof Error ? error.message : "Authentication is not configured.");
@@ -37,17 +51,23 @@ export async function requireTenant(headers: Headers, capability: Capability, wo
   if (!membership || !hasCapability(membership.role, capability)) throw new AuthError(403, "This organization role does not grant the requested capability.");
 
   const tenantContext = { userId: current.user.id, organizationId };
-  let resolvedWorkspaceId = workspaceId;
-  if (workspaceId) {
+  let resolvedWorkspaceId = workspaceId
+    || headers.get("x-proofloop-workspace-id")
+    || parseCookie(headers.get("cookie"), "proofloop_workspace_id")
+    || parseCookie(headers.get("cookie"), "proofloop-workspace-id")
+    || undefined;
+
+  if (resolvedWorkspaceId) {
+    const selectedWorkspaceId = resolvedWorkspaceId;
     const workspaceAccess = await withTenantTransaction(tenantContext, async (tx) => {
       const [workspace] = await tx.select({ id: schema.workspace.id })
         .from(schema.workspace)
-        .where(and(eq(schema.workspace.id, workspaceId), eq(schema.workspace.organizationId, organizationId)))
+        .where(and(eq(schema.workspace.id, selectedWorkspaceId), eq(schema.workspace.organizationId, organizationId)))
         .limit(1);
       if (!workspace) return { exists: false, assigned: false };
       const [workspaceMembership] = await tx.select({ id: schema.workspaceMembership.id })
         .from(schema.workspaceMembership)
-        .where(and(eq(schema.workspaceMembership.userId, current.user.id), eq(schema.workspaceMembership.workspaceId, workspaceId)))
+        .where(and(eq(schema.workspaceMembership.userId, current.user.id), eq(schema.workspaceMembership.workspaceId, selectedWorkspaceId)))
         .limit(1);
       return { exists: true, assigned: Boolean(workspaceMembership) };
     });
@@ -58,9 +78,13 @@ export async function requireTenant(headers: Headers, capability: Capability, wo
       .from(schema.workspaceMembership)
       .innerJoin(schema.workspace, eq(schema.workspaceMembership.workspaceId, schema.workspace.id))
       .where(and(eq(schema.workspaceMembership.userId, current.user.id), eq(schema.workspace.organizationId, organizationId)))
+      .orderBy(desc(schema.workspaceMembership.createdAt))
       .limit(2));
-    if (memberships.length !== 1) throw new AuthError(409, "Select a workspace membership before accessing analysis data.");
-    resolvedWorkspaceId = memberships[0].id;
+    if (memberships.length >= 1) {
+      resolvedWorkspaceId = memberships[0].id;
+    } else {
+      throw new AuthError(404, "No workspaces found in this organization. Create a workspace first.");
+    }
   }
 
   return { userId: current.user.id, organizationId, role: membership.role as OrganizationRole, ...(resolvedWorkspaceId ? { workspaceId: resolvedWorkspaceId } : {}) };
@@ -71,10 +95,6 @@ export async function requireTenant(headers: Headers, capability: Capability, wo
  * Production and staging environments MUST NEVER silently fall back to in-memory storage.
  */
 export async function resolveRequestTenant(headers: Headers, capability: Capability, workspaceId?: string) {
-  // Unit test suites test API contract handling and validation with mock demo context
-  if (process.env.NODE_ENV === "test") {
-    return null;
-  }
   // When DATABASE_URL is configured, always require authenticated tenant to ensure durable storage
   if (process.env.DATABASE_URL) {
     return requireTenant(headers, capability, workspaceId);
@@ -83,6 +103,30 @@ export async function resolveRequestTenant(headers: Headers, capability: Capabil
   const isSharedEnvironment = process.env.NODE_ENV === "production" || (process.env.NODE_ENV as string) === "staging";
   if (isSharedEnvironment) {
     return requireTenant(headers, capability, workspaceId);
+  }
+  // Non-production / test / opt-in demo mode:
+  // If a workspace ID is explicitly provided, return an isolated tenant scoped to that workspace
+  const targetWorkspace = workspaceId
+    || headers.get("x-proofloop-workspace-id")
+    || parseCookie(headers.get("cookie"), "proofloop_workspace_id")
+    || parseCookie(headers.get("cookie"), "proofloop-workspace-id")
+    || undefined;
+  if (targetWorkspace) {
+    const role = (headers.get("x-proofloop-role") as OrganizationRole) || "owner";
+    if (!hasCapability(role, capability)) {
+      throw new AuthError(403, "This organization role does not grant the requested capability.");
+    }
+    return {
+      userId: headers.get("x-proofloop-user-id") || "tenant-user",
+      organizationId: headers.get("x-proofloop-organization-id") || "demo-org",
+      role,
+      workspaceId: targetWorkspace,
+    };
+  }
+
+  // Unit test suites test API contract handling and validation with mock demo context
+  if (process.env.NODE_ENV === "test") {
+    return null;
   }
   // Local development: only fall back if explicitly opted into demo mode
   if (process.env.PROOFLOOP_DEMO_MODE === "true") {

@@ -19,7 +19,7 @@ type ProviderStatusResponse = {
 const primaryQuestion = "Which products are affecting our current quarter's profit margin, and why?";
 
 export function AnalysisWorkspace() {
-  const { tenantFetch, role, session, workspaceId } = useTenant();
+  const { tenantFetch, role, session, sessionLoading, workspaceId } = useTenant();
   const [question, setQuestion] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [provider, setProvider] = useState<ProviderStatusResponse | null>(null);
@@ -27,6 +27,39 @@ export function AnalysisWorkspace() {
   const [providerError, setProviderError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [requestError, setRequestError] = useState("");
+  const [history, setHistory] = useState<AnalysisResponse[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+
+  const loadHistory = useCallback(async (signal?: AbortSignal) => {
+    if (sessionLoading) return;
+    if (session && !workspaceId) {
+      setHistory([]);
+      setHistoryLoading(false);
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const response = await tenantFetch("/api/analysis", { cache: "no-store", signal });
+      const payload = await response.json() as { analyses?: AnalysisResponse[]; error?: string };
+      if (!response.ok || !Array.isArray(payload.analyses)) {
+        throw new Error(payload.error ?? `Analysis history request failed (${response.status}).`);
+      }
+      setHistory(payload.analyses);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setHistoryError(error instanceof Error ? error.message : "Could not load analysis history.");
+    } finally {
+      if (!signal?.aborted) setHistoryLoading(false);
+    }
+  }, [session, sessionLoading, tenantFetch, workspaceId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => void loadHistory(controller.signal), 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [loadHistory]);
 
   const loadProvider = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -50,6 +83,15 @@ export function AnalysisWorkspace() {
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [loadProvider]);
 
+  // Reset analysis state whenever the user switches workspaces
+  const [prevWorkspaceId, setPrevWorkspaceId] = useState(workspaceId);
+  if (prevWorkspaceId !== workspaceId) {
+    setPrevWorkspaceId(workspaceId);
+    setAnalysis(null);
+    setRequestError("");
+    setQuestion("");
+  }
+
   async function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (question.trim().length < 3 || submitting) return;
@@ -67,6 +109,7 @@ export function AnalysisWorkspace() {
       const payload = await response.json() as AnalysisResponse | { error?: string };
       if ("analysisId" in payload && typeof payload.analysisId === "string") {
         setAnalysis(payload as AnalysisResponse);
+        void loadHistory();
         return;
       }
       setRequestError("error" in payload && payload.error ? payload.error : "The analysis request failed.");
@@ -86,7 +129,7 @@ export function AnalysisWorkspace() {
       <PageHeader
         title="AI Analysis"
         description="Ask a business question, then inspect the query, validation, results, and evidence returned by Proofloop."
-        meta={<StatusPill tone="neutral">Seeded demo data</StatusPill>}
+        meta={<StatusPill tone="neutral">{session && workspaceId ? "Active workspace" : "Seeded demo data"}</StatusPill>}
       />
 
       <section className="rounded-xl border border-line bg-card p-4 sm:p-5" aria-labelledby="provider-status-title">
@@ -170,6 +213,37 @@ export function AnalysisWorkspace() {
           providerName={providerName}
         />
       ) : null}
+
+      <section className="rounded-xl border border-line bg-card p-4 sm:p-5" aria-labelledby="analysis-history-title">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 id="analysis-history-title" className="font-semibold text-ink">Analysis history</h2>
+            <p className="mt-1 text-sm text-muted">Loaded from the selected workspace’s analysis API.</p>
+          </div>
+          <button type="button" onClick={() => void loadHistory()} disabled={historyLoading} className="inline-flex min-h-10 items-center rounded-lg border border-line px-3 text-sm font-medium text-ink disabled:opacity-60">
+            {historyLoading ? "Refreshing…" : "Refresh history"}
+          </button>
+        </div>
+        {historyLoading && history.length === 0 ? <p className="mt-4 text-sm text-muted" role="status">Loading analyses…</p> : null}
+        {historyError ? <p className="mt-4 rounded-lg border border-negative/25 bg-negative-soft p-3 text-sm text-negative" role="alert">{historyError}</p> : null}
+        {!historyLoading && !historyError && history.length === 0 ? <p className="mt-4 rounded-lg bg-canvas p-4 text-sm text-muted">No analyses have been recorded for this workspace yet. Run a question above to create the first analysis.</p> : null}
+        {history.length > 0 ? (
+          <ul className="mt-4 divide-y divide-line">
+            {history.map((item) => (
+              <li key={item.analysisId} className="flex flex-wrap items-start justify-between gap-2 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-ink">{item.question}</p>
+                  <p className="mt-1 break-all font-mono text-xs text-muted">{item.analysisId}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusPill tone={item.status === "completed" ? "completed" : "failed"}>{item.status}</StatusPill>
+                  {item.metadata?.generatedAt ? <time className="text-xs text-muted" dateTime={item.metadata.generatedAt}>{formatDay(item.metadata.generatedAt.slice(0, 10))}</time> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
     </div>
   );
 }

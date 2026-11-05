@@ -32,6 +32,8 @@ export function QuarterComparisonChart({
     },
   ];
 
+  const isEmpty = snapshot.q3.revenue === 0 && snapshot.q4.revenue === 0;
+
   return (
     <section className="rounded-2xl border border-line bg-card p-4 shadow-[0_1px_2px_rgba(33,35,49,0.04)] md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -43,53 +45,59 @@ export function QuarterComparisonChart({
             Two period totals. Not a daily or monthly trend.
           </p>
         </div>
-        <p className="text-xs text-muted">USD · seeded demo data</p>
+        <p className="text-xs text-muted">USD · revenue & profit</p>
       </div>
-      <div className="mt-4 h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} barGap={6} barCategoryGap="28%">
-            <CartesianGrid vertical={false} stroke="#e6e6ed" />
-            <XAxis
-              dataKey="name"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: "#707280", fontSize: 12 }}
-            />
-            <YAxis
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: "#707280", fontSize: 12 }}
-              tickFormatter={(value: number) =>
-                value >= 1000 ? `$${Math.round(value / 1000)}k` : `$${value}`
-              }
-            />
-            <Tooltip
-              cursor={{ fill: "#f6f8f9" }}
-              formatter={(value) => formatMoney(Number(value ?? 0))}
-            />
-            <Bar
-              dataKey="revenue"
-              name="Revenue"
-              fill="#6b50cf"
-              radius={[6, 6, 0, 0]}
-              isAnimationActive={false}
-            />
-            <Bar
-              dataKey="grossProfit"
-              name="Gross profit"
-              fill="#c4b8ef"
-              radius={[6, 6, 0, 0]}
-              isAnimationActive={false}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+
+      {isEmpty ? (
+        <div className="mt-4 flex h-64 items-center justify-center rounded-xl bg-canvas text-sm text-muted">
+          No revenue or profit recorded in this workspace yet.
+        </div>
+      ) : (
+        <div className="mt-4 h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} barGap={6} barCategoryGap="28%">
+              <CartesianGrid vertical={false} stroke="#e6e6ed" />
+              <XAxis
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: "#707280", fontSize: 12 }}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: "#707280", fontSize: 12 }}
+                tickFormatter={(value: number) =>
+                  value >= 1000 ? `$${Math.round(value / 1000)}k` : `$${value}`
+                }
+              />
+              <Tooltip
+                cursor={{ fill: "#f6f8f9" }}
+                formatter={(value) => formatMoney(Number(value ?? 0))}
+              />
+              <Bar
+                dataKey="revenue"
+                name="Revenue"
+                fill="#6b50cf"
+                radius={[6, 6, 0, 0]}
+                isAnimationActive={false}
+              />
+              <Bar
+                dataKey="grossProfit"
+                name="Gross profit"
+                fill="#c4b8ef"
+                radius={[6, 6, 0, 0]}
+                isAnimationActive={false}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
       <p className="mt-3 text-xs leading-5 text-muted">
-        The seed has {snapshot.q3.saleCount} completed Q3 sales (
+        The workspace has {snapshot.q3.saleCount} completed Q3 sales (
         {formatDayList(snapshot.q3.saleDates)}) and {snapshot.q4.saleCount}{" "}
         completed Q4 sales ({formatDayList(snapshot.q4.saleDates) || "none"}).
-        Those dates are sparse samples. Q4 revenue is lower partly because the
-        quarter is unfinished, so the bar heights are not a like-for-like trend.
       </p>
       <details className="mt-3 border-t border-line pt-3 text-sm">
         <summary className="min-h-8 cursor-pointer font-medium text-brand">View exact chart values</summary>

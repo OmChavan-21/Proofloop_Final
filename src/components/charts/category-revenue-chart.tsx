@@ -30,7 +30,7 @@ export function CategoryRevenueChart({
       <div>
         <h2 className="text-base font-semibold text-ink">Revenue by category</h2>
         <p className="mt-1 text-sm text-muted">
-          {periodLabel} · seeded demo data · USD
+          {periodLabel} · USD
         </p>
       </div>
       {data.length === 0 ? (
@@ -86,7 +86,7 @@ export function CategoryRevenueChart({
             <div className="mt-2 overflow-x-auto">
               <table className="w-full min-w-64 text-left text-sm">
                 <caption className="sr-only">
-                  {periodLabel} seeded revenue by category
+                  {periodLabel} revenue by category
                 </caption>
                 <thead className="text-xs text-muted">
                   <tr>

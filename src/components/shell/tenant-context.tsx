@@ -25,9 +25,12 @@ const TenantContext = createContext<TenantState | null>(null);
 
 async function loadOrganizationContext(organizationId: string) {
   const payload = await requestJson<{ workspaces: WorkspaceItem[] }>("/api/workspaces");
-  const saved = window.localStorage.getItem(`proofloop-workspace:${organizationId}`) || "";
+  const saved = typeof window !== "undefined" ? window.localStorage.getItem(`proofloop-workspace:${organizationId}`) || "" : "";
   const chosen = payload.workspaces.find((item) => item.id === saved)?.id
-    ?? (payload.workspaces.length === 1 ? payload.workspaces[0].id : "");
+    ?? (payload.workspaces.length > 0 ? payload.workspaces[0].id : "");
+  if (chosen && typeof document !== "undefined") {
+    document.cookie = `proofloop_workspace_id=${chosen}; Path=/; SameSite=Lax`;
+  }
   return { workspaces: payload.workspaces, workspaceId: chosen };
 }
 
@@ -56,9 +59,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       const activeId = next.session.activeOrganizationId || "";
       setActiveOrganizationId(activeId);
       if (activeId) {
-        const context = await loadOrganizationContext(activeId);
+        const [context, member] = await Promise.all([
+          loadOrganizationContext(activeId),
+          requestJson<{ role: string }>("/api/auth/organization/get-active-member-role"),
+        ]);
         setWorkspaces(context.workspaces); setWorkspaceId(context.workspaceId);
-        const member = await requestJson<{ role: string }>("/api/auth/organization/get-active-member-role");
         setRole(member.role);
       } else {
         setWorkspaces([]); setWorkspaceId(""); setRole("");
@@ -83,9 +88,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ organizationId: id }),
       });
       setActiveOrganizationId(id);
-      const context = await loadOrganizationContext(id);
+      const [context, member] = await Promise.all([
+        loadOrganizationContext(id),
+        requestJson<{ role: string }>("/api/auth/organization/get-active-member-role"),
+      ]);
       setWorkspaces(context.workspaces); setWorkspaceId(context.workspaceId);
-      const member = await requestJson<{ role: string }>("/api/auth/organization/get-active-member-role");
       setRole(member.role);
       await loadSession();
     } catch (error) {
@@ -95,7 +102,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
   const chooseWorkspace = useCallback((id: string) => {
     setWorkspaceId(id);
-    if (activeOrganizationId && id) window.localStorage.setItem(`proofloop-workspace:${activeOrganizationId}`, id);
+    if (id && typeof document !== "undefined") {
+      document.cookie = `proofloop_workspace_id=${id}; Path=/; SameSite=Lax`;
+    }
+    if (activeOrganizationId && id && typeof window !== "undefined") {
+      window.localStorage.setItem(`proofloop-workspace:${activeOrganizationId}`, id);
+    }
   }, [activeOrganizationId]);
 
   const createOrganization = useCallback(async (name: string) => {

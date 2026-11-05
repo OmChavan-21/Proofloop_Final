@@ -39,12 +39,12 @@ export async function POST(request: NextRequest) {
 
     const tenant = await resolveRequestTenant(request.headers, "analysis:run", request.headers.get("x-proofloop-workspace-id") ?? undefined);
     return await withTenantContext(tenant, async () => {
-    const analysis = await runAnalysisOrchestration(validation.data);
-    if (tenant) await persistAnalysis(tenant, analysis);
+      const analysis = await runAnalysisOrchestration(validation.data, tenant?.workspaceId, tenant ?? undefined);
+      if (tenant && process.env.DATABASE_URL) await persistAnalysis(tenant, analysis);
 
-    // If analysis execution itself encountered a failure, return 422 or 200 with structured failed status
-    const statusCode = analysis.status === "failed" ? 422 : 200;
-    return NextResponse.json(analysis, { status: statusCode });
+      // If analysis execution itself encountered a failure, return 422 or 200 with structured failed status
+      const statusCode = analysis.status === "failed" ? 422 : 200;
+      return NextResponse.json(analysis, { status: statusCode });
     });
   } catch (error) {
     if (error instanceof Error && "status" in error) return authErrorResponse(error);
@@ -62,9 +62,9 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const tenant = await resolveRequestTenant(request.headers, "analysis:read", request.headers.get("x-proofloop-workspace-id") ?? undefined);
-    const analyses = tenant
+    const analyses = (tenant && process.env.DATABASE_URL)
       ? await listPersistedAnalyses(tenant)
-      : await withTenantContext(null, async () => listAnalyses());
+      : await withTenantContext(tenant, async () => listAnalyses());
     return NextResponse.json({
       analyses,
       count: analyses.length

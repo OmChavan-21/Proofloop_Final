@@ -36,7 +36,7 @@ export interface CategorySnapshot {
 }
 
 export interface DemoSnapshot {
-  dataSource: "seeded_demo_data";
+  dataSource: "seeded_demo_data" | "workspace_data";
   currency: "USD";
   q3Label: "Q3 2026";
   q4Label: "Q4 2026";

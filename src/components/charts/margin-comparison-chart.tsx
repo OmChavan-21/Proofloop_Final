@@ -28,7 +28,7 @@ export function MarginComparisonChart({
       <h2 className="text-base font-semibold text-ink">Margin change by product</h2>
       <p className="mt-1 text-sm text-muted">
         Partial Q4 gross margin minus Q3 gross margin, in percentage points.
-        All {products.length} seeded products are shown.
+        All {products.length} products returned for this workspace are shown.
       </p>
       <div className="mt-4 h-72">
         <ResponsiveContainer width="100%" height="100%">

@@ -5,6 +5,22 @@ import * as schema from "./schema";
 
 let pool: Pool | undefined;
 let database: NodePgDatabase<typeof schema> | undefined;
+let runtimeRoleCheck: Promise<void> | undefined;
+
+export type RuntimeRoleState = {
+  rolsuper: boolean;
+  rolbypassrls: boolean;
+  app_schema_create: boolean;
+  owns_application_objects: boolean;
+};
+
+export function isSafeRuntimeRole(role: RuntimeRoleState | undefined): boolean {
+  if (!role) return false;
+  return !role.rolsuper
+    && !role.rolbypassrls
+    && !role.app_schema_create
+    && !role.owns_application_objects;
+}
 
 export function getPool(): Pool {
   const connectionString = process.env.DATABASE_URL;
@@ -23,10 +39,34 @@ export function getDatabase() {
   return database;
 }
 
+/** Refuse application traffic when DATABASE_URL can bypass tenant RLS or own schema objects. */
+export function assertRuntimeDatabaseRole(): Promise<void> {
+  runtimeRoleCheck ??= (async () => {
+    const result = await getPool().query(`
+      SELECT r.rolsuper, r.rolbypassrls,
+        has_schema_privilege(current_user, 'app', 'CREATE') AS app_schema_create,
+        EXISTS (
+          SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname IN ('app', 'auth') AND c.relkind IN ('r', 'p', 'v', 'm', 'S') AND c.relowner = r.oid
+        ) AS owns_application_objects
+      FROM pg_roles r WHERE r.rolname = current_user
+    `);
+    const role = result.rows[0];
+    if (!isSafeRuntimeRole(role)) {
+      throw new Error("DATABASE_URL must use a non-owner runtime role with NOBYPASSRLS and no schema CREATE privileges.");
+    }
+  })().catch((error) => {
+    runtimeRoleCheck = undefined;
+    throw error;
+  });
+  return runtimeRoleCheck;
+}
+
 export async function closeDatabasePool(): Promise<void> {
   if (pool) await pool.end();
   pool = undefined;
   database = undefined;
+  runtimeRoleCheck = undefined;
 }
 
 export async function withTenantTransaction<T>(

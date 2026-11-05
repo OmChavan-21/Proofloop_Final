@@ -46,9 +46,9 @@ export async function POST(
     }
 
     const tenant = await resolveRequestTenant(request.headers, "approval:decide", request.headers.get("x-proofloop-workspace-id") ?? undefined);
-    const result = tenant
+    const result = (tenant && process.env.DATABASE_URL)
       ? await recordPersistedApprovalDecision(tenant, validation.data)
-      : await withTenantContext(null, async () => recordApprovalDecision(validation.data));
+      : await withTenantContext(tenant, async () => recordApprovalDecision(validation.data));
     if (!result.success) {
       return NextResponse.json(
         {

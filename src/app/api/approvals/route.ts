@@ -37,9 +37,9 @@ export async function POST(request: NextRequest) {
     }
 
     const tenant = await resolveRequestTenant(request.headers, "approval:decide", request.headers.get("x-proofloop-workspace-id") ?? undefined);
-    const result = tenant
+    const result = (tenant && process.env.DATABASE_URL)
       ? await recordPersistedApprovalDecision(tenant, validation.data)
-      : await withTenantContext(null, async () => recordApprovalDecision(validation.data));
+      : await withTenantContext(tenant, async () => recordApprovalDecision(validation.data));
     if (!result.success) {
       return NextResponse.json(
         {
@@ -74,9 +74,9 @@ export async function GET(request: NextRequest) {
     const tenant = await resolveRequestTenant(request.headers, "analysis:read", request.headers.get("x-proofloop-workspace-id") ?? undefined);
     const searchParams = request.nextUrl.searchParams;
     const analysisId = searchParams.get("analysisId") || undefined;
-    const auditHistory = tenant
+    const auditHistory = (tenant && process.env.DATABASE_URL)
       ? await getPersistedAuditHistory(tenant, analysisId)
-      : await withTenantContext(null, async () => getAuditHistory(analysisId));
+      : await withTenantContext(tenant, async () => getAuditHistory(analysisId));
 
     return NextResponse.json({
       auditHistory,

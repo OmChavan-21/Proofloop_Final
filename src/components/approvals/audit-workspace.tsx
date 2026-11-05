@@ -34,6 +34,13 @@ export function AuditWorkspace() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  const [prevWorkspaceId, setPrevWorkspaceId] = useState(workspaceId);
+  if (prevWorkspaceId !== workspaceId) {
+    setPrevWorkspaceId(workspaceId);
+    setEntries([]);
+    setError("");
+  }
+
   return <div className="space-y-6">
     <PageHeader title="Audit history" description="Review actions recorded by Proofloop for the selected workspace." meta={<StatusPill tone="neutral">API-backed</StatusPill>} />
     {session && !workspaceId ? <p className="rounded-lg border border-warning/25 bg-warning-soft p-3 text-sm" role="status">Select an organization and workspace in the header to inspect its history.</p> : null}

@@ -115,8 +115,8 @@ export interface QuarterPeriodDetail {
 }
 
 export interface AnalysisMetadata {
-  dataSource: "seeded_demo_data";
-  isDemoData: true;
+  dataSource: "seeded_demo_data" | "workspace_data";
+  isDemoData: boolean;
   generatedAt: string;
   latestDataDate: string;
   isPartialQuarter: boolean;

@@ -15,9 +15,9 @@ export async function GET(
   try {
     const { id } = await params;
     const tenant = await resolveRequestTenant(_request.headers, "analysis:read", _request.headers.get("x-proofloop-workspace-id") ?? undefined);
-    const analysis = tenant
+    const analysis = (tenant && process.env.DATABASE_URL)
       ? await getPersistedAnalysis(tenant, id)
-      : await withTenantContext(null, async () => getAnalysis(id));
+      : await withTenantContext(tenant, async () => getAnalysis(id));
 
     if (!analysis) {
       return NextResponse.json(

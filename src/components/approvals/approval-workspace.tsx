@@ -78,6 +78,19 @@ export function ApprovalWorkspace() {
     return () => window.clearTimeout(timer);
   }, [loadQueueAndAudit]);
 
+  // Reset selected item and messages when switching workspaces
+  const [prevWorkspaceId, setPrevWorkspaceId] = useState(workspaceId);
+  if (prevWorkspaceId !== workspaceId) {
+    setPrevWorkspaceId(workspaceId);
+    setSelectedId("");
+    setSelectedAnalysis(null);
+    setDecisionBusy(false);
+    setDecisionError("");
+    setDecisionMessage("");
+    setDecisionEntry(null);
+    setNotes("");
+  }
+
   useEffect(() => {
     if (!selectedId) return;
     const controller = new AbortController();

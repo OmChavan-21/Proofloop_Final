@@ -191,8 +191,10 @@ function ShellContent({ children }: { children: ReactNode }) {
             className="mx-auto w-full max-w-[1440px] flex-1 px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:px-8 lg:pb-10"
           >
             {!session && authError && pathname !== "/login" && pathname !== "/signup" ? <p className="mb-4 rounded-lg border border-warning/25 bg-warning-soft px-3 py-2 text-xs leading-5 text-ink lg:hidden" role="status">Account access is unavailable in this deployment: {authError}</p> : null}
-            {session && (pathname === "/" || pathname === "/products" || pathname.startsWith("/products/")) ? <p className="mb-4 rounded-lg border border-warning/25 bg-warning-soft px-3 py-2 text-xs leading-5 text-ink" role="note">Overview and product figures use the seeded demo catalog. The selected workspace scopes analysis, approvals and audit requests; it does not change these demo figures.</p> : null}
-            {children}
+            {session && !workspaceId && (pathname === "/" || pathname === "/products" || pathname.startsWith("/products/")) ? <p className="mb-4 rounded-lg border border-warning/25 bg-warning-soft px-3 py-2 text-xs leading-5 text-ink" role="note">Select a workspace in the header to view its independent dashboard.</p> : null}
+            <div key={`${session?.user.id ?? "demo"}:${activeOrganizationId || "no-organization"}:${workspaceId || "no-workspace"}`}>
+              {children}
+            </div>
           </main>
         </div>
       </div>

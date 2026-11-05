@@ -1,28 +1,34 @@
-import { loadDemoSnapshot } from "@/components/dashboard/load-demo-snapshot";
-import { PageHeader } from "@/components/ui/page-header";
-import { PartialNote } from "@/components/ui/partial-note";
-import { ProductPerformanceTable } from "@/components/products/product-performance-table";
-import { StatusPill } from "@/components/ui/status-pill";
+import { headers } from "next/headers";
+import { resolveRequestTenant } from "@/server/auth/session";
+import { createEmptySnapshot, loadWorkspaceSnapshot } from "@/engine/workspace-manager";
+import { getPersistedWorkspaceSnapshot } from "@/server/db/persistence";
+import { ProductPerformanceWorkspace } from "@/components/products/product-performance-workspace";
 
 export default async function ProductPerformancePage() {
-  const snapshot = await loadDemoSnapshot();
-  const firstSaleDate = snapshot.q4.saleDates[0] ?? null;
+  const reqHeaders = await headers();
+  let snapshot;
+  let initialWorkspaceId: string | undefined;
+  let initialOrganizationId: string | undefined;
+  try {
+    const tenant = await resolveRequestTenant(reqHeaders, "analysis:read");
+    if (tenant && process.env.DATABASE_URL) {
+      snapshot = await getPersistedWorkspaceSnapshot(tenant);
+    } else if (tenant?.workspaceId) {
+      snapshot = await loadWorkspaceSnapshot(tenant.workspaceId, tenant);
+    } else if (process.env.DATABASE_URL) {
+      snapshot = createEmptySnapshot("workspace_data");
+    } else {
+      snapshot = await loadWorkspaceSnapshot("demo");
+    }
+    if (tenant?.workspaceId) {
+      initialWorkspaceId = tenant.workspaceId;
+      initialOrganizationId = tenant.organizationId;
+    }
+  } catch {
+    snapshot = process.env.DATABASE_URL
+      ? createEmptySnapshot("workspace_data")
+      : await loadWorkspaceSnapshot("demo");
+  }
 
-  return (
-    <div className="space-y-6 sm:space-y-8">
-      <PageHeader
-        title="Product Performance"
-        description="Compare seeded product revenue, costs, gross profit, and margin across the available periods."
-        meta={<StatusPill tone="neutral">Seeded demo catalog</StatusPill>}
-      />
-      <PartialNote firstSaleDate={firstSaleDate} lastSaleDate={snapshot.lastSaleDate} />
-      <section className="rounded-xl border border-line bg-card px-4 py-4 sm:px-5">
-        <h2 className="text-sm font-semibold text-ink">Comparison periods</h2>
-        <p className="mt-1 text-sm text-muted">
-          Q3 2026 is complete ({snapshot.q3RangeLabel}). Q4 2026 is partial ({firstSaleDate ?? "no sales"} through {snapshot.lastSaleDate ?? "no sales"}).
-        </p>
-      </section>
-      <ProductPerformanceTable products={snapshot.products} />
-    </div>
-  );
+  return <ProductPerformanceWorkspace initialSnapshot={snapshot} initialWorkspaceId={initialWorkspaceId} initialOrganizationId={initialOrganizationId} />;
 }
